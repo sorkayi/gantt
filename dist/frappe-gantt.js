@@ -10,18 +10,18 @@ const SECOND = 'second';
 const MILLISECOND = 'millisecond';
 
 const month_names = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December'
+    '一月',// 'January',
+    '二月',// 'February',
+    '三月',// 'March',
+    '四月',// 'April',
+    '五月',// 'May',
+    '六月',// 'June',
+    '七月',// 'July',
+    '八月',// 'August',
+    '九月',// 'September',
+    '十月',// 'October',
+    '十一月',// 'November',
+    '十二月'// 'December'
 ];
 
 var date_utils = {
@@ -378,14 +378,25 @@ class Bar {
     }
 
     prepare_values() {
+        this.presudoStart = date_utils.parse(date_utils.format(this.task.start, 'YYYY-MM-DD'));
+        this.presudoEnd = date_utils.parse(date_utils.format(this.task.end, 'YYYY-MM-DD'));
+
         this.invalid = this.task.invalid;
         this.height = this.gantt.options.bar_height;
         this.x = this.compute_x();
         this.y = this.compute_y();
         this.corner_radius = this.gantt.options.bar_corner_radius;
+        
         this.duration =
             (date_utils.diff(this.task._end, this.task._start, 'hour') + 24) /
             this.gantt.options.step;
+        
+        if (this.gantt.view_is(['Day'])) {
+            this.duration =
+                (date_utils.diff(this.presudoEnd, this.presudoStart, 'hour') + 24) /
+                this.gantt.options.step;
+        }
+        
         this.width = this.gantt.options.column_width * this.duration;
         this.progress_width =
             this.gantt.options.column_width *
@@ -427,7 +438,8 @@ class Bar {
         this.draw_bar();
         this.draw_progress_bar();
         this.draw_label();
-        this.draw_resize_handles();
+        if (this.gantt.options.fixed == false)
+            this.draw_resize_handles();
     }
 
     draw_bar() {
@@ -538,20 +550,26 @@ class Bar {
                 return;
             }
 
-            if (this.group.classList.contains('active')) {
-                this.gantt.trigger_event('click', [this.task]);
-            }
+            // every click must to be callback.
+            // if (this.group.classList.contains('active')) {
+                // this.gantt.trigger_event('click', [this.task]);
+                this.gantt.trigger_event('click', [
+                    this.$bar,
+                    this.task
+                ]);
+            // }
             this.gantt.unselect_all();
             this.group.classList.toggle('active');
 
-            this.show_popup();
+            // this.show_popup();
         });
     }
 
     show_popup() {
-        const start_date = date_utils.format(this.task._start, 'MMM D');
-        const end_date = date_utils.format(this.task._end, 'MMM D');
-        const subtitle = start_date + ' - ' + end_date;
+        const start_date = date_utils.format(this.task._start);
+        const end_date = date_utils.format(this.task._end);
+        const subtitle = '起: ' + start_date + ' <br> ' + 
+                         '迄: ' + end_date;
 
         this.gantt.show_popup({
             target_element: this.$bar,
@@ -584,7 +602,10 @@ class Bar {
         this.update_handle_position();
         this.update_progressbar_position();
         this.update_arrow_position();
-        // this.update_details_position();
+
+        if (this.gantt.bar_being_dragged === this.task.id) {
+            this.show_popup();
+        }
     }
 
     date_changed() {
@@ -640,10 +661,18 @@ class Bar {
     }
 
     compute_x() {
+
         let x =
             date_utils.diff(this.task._start, this.gantt.gantt_start, 'hour') /
             this.gantt.options.step *
             this.gantt.options.column_width;
+
+        if (this.gantt.view_is(['Day'])) {
+            x = 
+                date_utils.diff(this.presudoStart, this.gantt.gantt_start, 'hour') /
+                this.gantt.options.step *
+                this.gantt.options.column_width;
+        }
 
         if (this.gantt.view_is('Month')) {
             x =
@@ -746,11 +775,6 @@ class Bar {
         for (let arrow of this.arrows) {
             arrow.update();
         }
-    }
-
-    update_details_position() {
-        const { x, y } = get_details_position();
-        this.details_box && this.details_box.transform(`t${x},${y}`);
     }
 }
 
@@ -960,13 +984,14 @@ class Gantt {
             header_height: 50,
             column_width: 30,
             step: 24,
-            view_modes: ['Quarter Day', 'Half Day', 'Day', 'Week', 'Month'],
+            view_modes: ['Hour', 'Quarter Day', 'Half Day', 'Day', 'Week', 'Month'],
             bar_height: 20,
             bar_corner_radius: 3,
             arrow_curve: 5,
             padding: 18,
             view_mode: 'Day',
             date_format: 'YYYY-MM-DD',
+            fixed: false,
             custom_popup_html: null
         };
         this.options = Object.assign({}, default_options, options);
@@ -1071,6 +1096,9 @@ class Gantt {
         } else if (view_mode === 'Month') {
             this.options.step = 24 * 30;
             this.options.column_width = 120;
+        } else if (view_mode === 'Hour') {
+            this.options.step = 24 / 24;
+            this.options.column_width = 38;
         }
     }
 
@@ -1093,7 +1121,7 @@ class Gantt {
         }
 
         // add date padding on both sides
-        if (this.view_is(['Quarter Day', 'Half Day'])) {
+        if (this.view_is(['Hour', 'Quarter Day', 'Half Day'])) {
             this.gantt_start = date_utils.add(this.gantt_start, -7, 'day');
             this.gantt_end = date_utils.add(this.gantt_end, 7, 'day');
         } else if (this.view_is('Month')) {
@@ -1340,6 +1368,7 @@ class Gantt {
             last_date = date_utils.add(date, 1, 'year');
         }
         const date_text = {
+            'Hour_lower': date_utils.format(date, 'HH'),
             'Quarter Day_lower': date_utils.format(date, 'HH'),
             'Half Day_lower': date_utils.format(date, 'HH'),
             Day_lower:
@@ -1351,6 +1380,10 @@ class Gantt {
                     ? date_utils.format(date, 'D MMM')
                     : date_utils.format(date, 'D'),
             Month_lower: date_utils.format(date, 'MMMM'),
+            'Hour_upper':
+                date.getDate() !== last_date.getDate()
+                    ? date_utils.format(date, 'D MMM')
+                    : '',
             'Quarter Day_upper':
                 date.getDate() !== last_date.getDate()
                     ? date_utils.format(date, 'D MMM')
@@ -1382,6 +1415,8 @@ class Gantt {
         };
 
         const x_pos = {
+            'Hour_lower': this.options.column_width * 4 / 2,
+            'Hour_upper': 0,
             'Quarter Day_lower': this.options.column_width * 4 / 2,
             'Quarter Day_upper': 0,
             'Half Day_lower': this.options.column_width * 2 / 2,
@@ -1488,10 +1523,13 @@ class Gantt {
         let is_resizing_right = false;
         let parent_bar_id = null;
         let bars = []; // instanceof Bar
+        this.bar_being_dragged = null;
 
         function action_in_progress() {
             return is_dragging || is_resizing_left || is_resizing_right;
         }
+
+        var options = this.options;
 
         $.on(
             this.layers.bar,
@@ -1518,6 +1556,8 @@ class Gantt {
                 ];
                 bars = ids.map(id => this.get_bar(id));
 
+                this.bar_being_dragged = parent_bar_id;
+
                 bars.forEach(bar => {
                     const $bar = bar.$bar;
                     $bar.ox = $bar.getX();
@@ -1532,6 +1572,9 @@ class Gantt {
             if (!action_in_progress()) return;
             const dx = e.offsetX - x_on_start;
             const dy = e.offsetY - y_on_start;
+
+            if (options.fixed == true)
+                return;
 
             bars.forEach(bar => {
                 const $bar = bar.$bar;
@@ -1722,7 +1765,7 @@ class Gantt {
 
     trigger_event(event, args) {
         if (this.options['on_' + event]) {
-            this.options['on_' + event].apply(null, args);
+            this.options['on_' + event].apply(null, [args]);
         }
     }
 
