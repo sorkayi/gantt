@@ -438,11 +438,18 @@ class Bar {
         this.draw_bar();
         this.draw_progress_bar();
         this.draw_label();
+        this.draw_task_table();
         if (this.gantt.options.fixed == false)
             this.draw_resize_handles();
     }
 
     draw_bar() {
+
+        let barStatus = this.task.status;
+        if (typeof barStatus == 'undefined') {
+            barStatus = "";
+        }
+
         this.$bar = createSVG('rect', {
             x: this.x,
             y: this.y,
@@ -450,7 +457,7 @@ class Bar {
             height: this.height,
             rx: this.corner_radius,
             ry: this.corner_radius,
-            class: 'bar',
+            class: 'bar-' + barStatus,
             append_to: this.bar_group
         });
 
@@ -522,6 +529,52 @@ class Bar {
                 points: this.get_progress_polygon_points().join(','),
                 class: 'handle progress',
                 append_to: this.handle_group
+            });
+        }
+    }
+
+    draw_task_table() {
+
+        let orderPaddingX = 50;
+        let taskPaddingX = 20;
+        let realX = 0;
+        let realY = this.y + this.height / 2;
+
+        if (this.task.dependencies.length != 0) {
+        // sub task
+            // create task
+            createSVG('polygon', {
+                append_to: this.gantt.$tableSvg,
+                points: [1.91+taskPaddingX,0+realY-10, 
+                        1.91+taskPaddingX,17.85+realY-10, 
+                        15.93+taskPaddingX,8.9+realY-10]
+            });
+
+            // create task label
+            createSVG('text', {
+                x: realX+taskPaddingX + 40,
+                y: realY,
+                innerHTML: this.task.name,
+                class: 'task-label',
+                append_to: this.gantt.$tableSvg
+            });
+        } else {
+        // main order
+            // create order
+            createSVG('polygon', {
+                append_to: this.gantt.$tableSvg,
+                points: [0,6.375+realY-10, 
+                        10.15,19.125+realY-10, 
+                        20.5,6.375+realY-10]
+            });
+
+            // create task label
+            createSVG('text', {
+                x: realX+orderPaddingX,
+                y: realY,
+                innerHTML: this.task.name,
+                class: 'task-label',
+                append_to: this.gantt.$tableSvg
             });
         }
     }
@@ -667,7 +720,7 @@ class Bar {
             this.gantt.options.step *
             this.gantt.options.column_width;
 
-        if (this.gantt.view_is(['Day'])) {
+        if (this.gantt.view_is('Day')) {
             x = 
                 date_utils.diff(this.presudoStart, this.gantt.gantt_start, 'hour') /
                 this.gantt.options.step *
@@ -936,10 +989,12 @@ class Popup {
 
         // show
         this.parent.style.opacity = 1;
+        this.parent.style.display = "table";
     }
 
     hide() {
         this.parent.style.opacity = 0;
+        this.parent.style.display = "none";
     }
 }
 
@@ -977,6 +1032,13 @@ class Gantt {
         this.popup_wrapper = document.createElement('div');
         this.popup_wrapper.classList.add('popup-wrapper');
         this.$svg.parentElement.appendChild(this.popup_wrapper);
+
+        // setup task table
+        this.$tableContainer = document.getElementById('gantt-task');
+        this.$tableSvg = createSVG('svg', {
+            append_to: this.$tableContainer,
+            class: 'gantt'
+        });
     }
 
     setup_options(options) {
@@ -1111,12 +1173,21 @@ class Gantt {
         this.gantt_start = this.gantt_end = null;
 
         for (let task of this.tasks) {
-            // set global start and end date
-            if (!this.gantt_start || task._start < this.gantt_start) {
-                this.gantt_start = task._start;
+
+            let presudoStart = task._start;
+            let presudoEnd = task._end;
+
+            if (this.view_is('Day')) {
+                presudoStart = date_utils.parse(date_utils.format(task.start, 'YYYY-MM-DD'));
+                presudoEnd = date_utils.parse(date_utils.format(task.end, 'YYYY-MM-DD'));
             }
-            if (!this.gantt_end || task._end > this.gantt_end) {
-                this.gantt_end = task._end;
+
+            // set global start and end date
+            if (!this.gantt_start || presudoStart < this.gantt_start) {
+                this.gantt_start = presudoStart;
+            }
+            if (!this.gantt_end || presudoEnd > this.gantt_end) {
+                this.gantt_end = presudoEnd;
             }
         }
 
@@ -1127,6 +1198,9 @@ class Gantt {
         } else if (this.view_is('Month')) {
             this.gantt_start = date_utils.start_of(this.gantt_start, 'year');
             this.gantt_end = date_utils.add(this.gantt_end, 1, 'year');
+        } else if (this.view_is('Day')) {
+            this.gantt_start = date_utils.add(this.gantt_start, -30, 'day');
+            this.gantt_end = date_utils.add(this.gantt_end, 30, 'day');
         } else {
             this.gantt_start = date_utils.add(this.gantt_start, -1, 'month');
             this.gantt_end = date_utils.add(this.gantt_end, 1, 'month');
@@ -1189,7 +1263,7 @@ class Gantt {
     make_grid_background() {
         const grid_width = this.dates.length * this.options.column_width;
         const grid_height =
-            this.options.header_height +
+            this.options.header_height + 50 + 
             this.options.padding +
             (this.options.bar_height + this.options.padding) *
                 this.tasks.length;
@@ -1204,9 +1278,13 @@ class Gantt {
         });
 
         $.attr(this.$svg, {
-            height: grid_height + this.options.padding + 100,
+            height: grid_height + this.options.padding,
             width: '100%'
         });
+
+        $.attr(this.$tableSvg, {
+            height: grid_height + this.options.padding
+        })
     }
 
     make_grid_rows() {
@@ -1396,7 +1474,7 @@ class Gantt {
                     : '',
             Day_upper:
                 date.getMonth() !== last_date.getMonth()
-                    ? date_utils.format(date, 'MMMM')
+                    ? date_utils.format(date, 'YYYY-MMMM')
                     : '',
             Week_upper:
                 date.getMonth() !== last_date.getMonth()
